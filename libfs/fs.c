@@ -7,6 +7,17 @@
 #include "disk.h"
 #include "fs.h"
 
+struct super_block{
+	int32_t signiture_1;
+	int32_t signiture_2;
+	int16_t block_total;
+	int16_t root_index;
+	int16_t data_index;
+	int16_t data_block_total;
+	int8_t FAT_block_total;
+	int8_t padding[BLOCK_SIZE - 17];
+};
+
 /* TODO: Phase 1 */
 
 int fs_mount(const char *diskname)
