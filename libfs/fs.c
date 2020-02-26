@@ -7,9 +7,8 @@
 #include "disk.h"
 #include "fs.h"
 
-struct super_block{
-	int32_t signiture_1;
-	int32_t signiture_2;
+struct __attribute__((__packed__)) super_block {
+	int32_t signiture[2];
 	int16_t block_total;
 	int16_t root_index;
 	int16_t data_index;
@@ -17,6 +16,18 @@ struct super_block{
 	int8_t FAT_block_total;
 	int8_t padding[BLOCK_SIZE - 17];
 };
+
+struct __attribute__((__packed__)) FAT {
+	int16_t* block_table;
+	int16_t length;
+};
+
+struct __attribute__((__packed__)) root {
+	int32_t filename[4];
+	int32_t file_size;
+	int16_t data_index;
+	int8_t padding[10];
+}
 
 /* TODO: Phase 1 */
 
