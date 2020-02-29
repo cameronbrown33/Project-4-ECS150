@@ -164,6 +164,47 @@ int fs_create(const char *filename)
 int fs_delete(const char *filename)
 {
 	/* TODO: Phase 2 */
+	if (filename == NULL) {
+		/* filename invalid */
+		return EXIT_ERR;
+	}
+
+	/* find the file */
+	int i;
+	int file_index = -1;
+	for (i = 0; i < FS_FILE_MAX_COUNT; i++) {
+		if (!strcmp(rootdirectory[i].filename, filename)) {
+			file_index = i;
+			break;
+		}
+	}
+
+	if (file_index == -1) {
+		/* no file filename to delete */
+		return EXIT_ERR;
+	}
+
+	if (file_open) {
+		/* file is currently open */
+		return EXIT_ERR;
+	}
+
+	/* free all data blocks containing file's contents in the FAT */
+	uint16_t old_index, next_index = rootdirectory[file_index].data_index;
+	while (next_index != FAT_EOC) {
+		old_index = next_index;
+		UNUSED(old_index);
+//		next_index = fatblock[next_index];
+//		fatblock[old_index] = 0;
+		// free();
+	}
+
+	/* empty file's entry */
+	rootdirectory[file_index].filename[0] = '\0';
+	rootdirectory[file_index].file_size = 0;
+//	rootdirectory[next_index].data_index = 0;
+
+
 	UNUSED(filename);
 	return EXIT_NOERR;
 }
