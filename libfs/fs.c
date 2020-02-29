@@ -11,6 +11,7 @@
 
 #define EXIT_NOERR 0
 #define EXIT_ERR -1
+#define FAT_EOC 0xFFFF
 
 #define UNUSED(x) (void)(x)
 
@@ -114,7 +115,49 @@ int fs_info(void)
 int fs_create(const char *filename)
 {
 	/* TODO: Phase 2 */
-	UNUSED(filename);
+	if (filename == NULL) {
+		/* filename invalid */
+		return EXIT_ERR;
+	}
+
+	if (strlen(filename) > FS_FILENAME_LEN) {
+		/* filename too long */
+		return EXIT_ERR;
+	}
+
+	/* check if file already exists */
+	int i;
+	for (i = 0; i < FS_FILE_MAX_COUNT; i++) {
+		if (!strcmp(rootdirectory[i].filename, filename)) {
+			return EXIT_ERR;
+		}
+	}
+
+	/* find empty entry in root directory */
+	int empty = -1;
+	for (i = 0; i < FS_FILE_MAX_COUNT; i++) {
+		if (rootdirectory[i].filename[0] == '\0') {
+			// empty
+			empty = i;
+			break;
+		}
+	}
+
+	if (empty < 0) {
+		/* root directory is full */
+		return EXIT_ERR;
+	}
+
+	// and fill it out with the proper info
+	// at first only specify name of the file and reset the other info since there is
+	// no content at this point
+	// size should be set to 0
+	// and the first index on the data blocks should be set to FAT_EOC
+	strcpy(rootdirectory[empty].filename, filename);
+	rootdirectory[empty].file_size = 0;
+	rootdirectory[empty].data_index = FAT_EOC;
+	// padding[10];
+
 	return EXIT_NOERR;
 }
 
