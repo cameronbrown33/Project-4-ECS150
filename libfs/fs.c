@@ -41,17 +41,14 @@ struct root rootdirectory[FS_FILE_MAX_COUNT];
 uint16_t* table;
 bool file_open = false;
 
-/* TODO: Phase 1 */
-
 int fs_mount(const char *diskname)
 {
-	/* TODO: Phase 1 */
 	if (block_disk_open(diskname)) {
 		printf("diskname\n");
 		return EXIT_ERR;
 	}	
 	if (block_read(0, &superblock)) {
-		printf("read\n");
+		printf("read super\n");
 		return EXIT_ERR;
 	}
 	table = malloc(superblock.fat_block_total * BLOCK_SIZE);
@@ -59,13 +56,13 @@ int fs_mount(const char *diskname)
 	
 	for (int i = 0; i < superblock.fat_block_total; i++) {
 		if (block_read(i + 1, table + ((i * BLOCK_SIZE) / 2))) {
-			printf("read\n");
+			printf("read fat\n");
 			free(table);
 			return EXIT_ERR;
 		}
 	}
 	if (block_read(superblock.root_index, rootdirectory)) {
-		printf("read\n");
+		printf("read root\n");
 		free(table);
 		return EXIT_ERR;
 	}
@@ -75,18 +72,17 @@ int fs_mount(const char *diskname)
 
 int fs_umount(void)
 {
-	/* TODO: Phase 1 */
 	if (block_disk_close()) {
-		printf("none open\n");
+		printf("no file open\n");
 		return EXIT_ERR;
 	}
 	free(table);
+	file_open = false;
 	return EXIT_NOERR;
 }
 
 int fs_info(void)
 {
-	/* TODO: Phase 1 */
 	if (!file_open) {
 		printf("file\n");
 		return EXIT_ERR;
