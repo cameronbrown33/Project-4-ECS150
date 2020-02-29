@@ -1,5 +1,5 @@
 # Target programs
-programs := test_fs.x
+programs := test_fs.x test_mount.x
 
 # File-system library
 FSLIB := libfs
