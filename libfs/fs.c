@@ -26,7 +26,7 @@ struct __attribute__((__packed__)) super_block {
 };
 
 struct __attribute__((__packed__)) FAT {
-	uint16_t** block_table;
+	uint16_t **block_table;
 };
 
 struct __attribute__((__packed__)) root {
@@ -193,16 +193,16 @@ int fs_delete(const char *filename)
 	uint16_t old_index, next_index = rootdirectory[file_index].data_index;
 	while (next_index != FAT_EOC) {
 		old_index = next_index;
-		UNUSED(old_index);
-//		next_index = fatblock[next_index];
-//		fatblock[old_index] = 0;
+		next_index = *(fatblock.block_table[next_index]);
+		*(fatblock.block_table[old_index]) = 0;
 		// free();
 	}
 
 	/* empty file's entry */
 	rootdirectory[file_index].filename[0] = '\0';
 	rootdirectory[file_index].file_size = 0;
-//	rootdirectory[next_index].data_index = 0;
+	*(fatblock.block_table[next_index]) = 0;
+	//	rootdirectory[next_index].data_index = 0;
 
 
 	UNUSED(filename);
@@ -212,6 +212,15 @@ int fs_delete(const char *filename)
 int fs_ls(void)
 {
 	/* TODO: Phase 2 */
+	printf("FS Ls:\n");
+	// return -1...
+	int i;
+	for (i = 0; i < FS_FILE_MAX_COUNT; i++) {
+		if (rootdirectory[i].filename[0] != '\0') {
+			printf("%s\n", rootdirectory[i].filename);
+		}
+	}
+	
 	return EXIT_NOERR;
 }
 
