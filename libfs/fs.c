@@ -12,6 +12,7 @@
 #define EXIT_NOERR 0
 #define EXIT_ERR -1
 #define FAT_EOC 0xFFFF
+#define BLOCK_SIZE 4096
 
 #define UNUSED(x) (void)(x)
 
@@ -34,6 +35,11 @@ struct __attribute__((__packed__)) root {
 	uint32_t file_size;
 	uint16_t data_index;
 	uint8_t padding[10];
+};
+
+struct __attribute__((__packed__)) file_descriptor {
+	int fd;
+	size_t offset;
 };
 
 struct super_block superblock;
@@ -154,6 +160,7 @@ int fs_create(const char *filename)
 	// size should be set to 0
 	// and the first index on the data blocks should be set to FAT_EOC
 	strcpy(rootdirectory[empty].filename, filename);
+	printf("File: %s\n", rootdirectory[empty].filename);
 	rootdirectory[empty].file_size = 0;
 	rootdirectory[empty].data_index = FAT_EOC;
 	// padding[10];
@@ -175,10 +182,11 @@ int fs_delete(const char *filename)
 	for (i = 0; i < FS_FILE_MAX_COUNT; i++) {
 		if (!strcmp(rootdirectory[i].filename, filename)) {
 			file_index = i;
+			printf("file: %s\n", rootdirectory[file_index].filename);
 			break;
 		}
 	}
-
+	
 	if (file_index == -1) {
 		/* no file filename to delete */
 		return EXIT_ERR;
@@ -230,8 +238,14 @@ int fs_ls(void)
 int fs_open(const char *filename)
 {
 	/* TODO: Phase 3 */
+	int fd = open(filename, O_RDWR | O_TRUNC |
+		O_CREAT, S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH);
+	
+	fd.fd = ;
+	fd.offset = 0;
+	
 	UNUSED(filename);
-	return EXIT_NOERR;
+	return fd.fd;
 }
 
 int fs_close(int fd)
@@ -256,6 +270,29 @@ int fs_lseek(int fd, size_t offset)
 	return EXIT_NOERR;
 }
 
+/* returns the index of the data block corresponding to file's offset */
+static uint16_t find_block(int fd, int offset)
+{
+	uint16_t index;
+	// get filename from fd
+	int i;
+	for (i = 0; i < FS_FILE_MAX_COUNT; i++) {
+		if (!strcmp(rootdirectory[i].filename, filename)) {
+			index = rootdirectory[i].data_block;
+			break;
+		}
+	}
+	while (offset >= BLOCK_SIZE) {
+		index = *(block_table[index]);
+		offset -= BLOCK_SIZE;
+	}
+	return index;
+}
+
+// in case file has to be extended in size
+// allocates a new data block and link it at the end of the file's data block chain
+// allocation of new blocks should follow the first fit strategy - first block available from beginning of fat
+
 int fs_write(int fd, void *buf, size_t count)
 {
 	/* TODO: Phase 4 */
@@ -268,9 +305,19 @@ int fs_write(int fd, void *buf, size_t count)
 int fs_read(int fd, void *buf, size_t count)
 {
 	/* TODO: Phase 4 */
-	UNUSED(fd);
-	UNUSED(buf);
-	UNUSED(count);
+	// get offset from fd
+	uint16_t block_index = find_block(fd, offset);
+	char *bounce_buffer = malloc(BLOCK_SIZE);
+	memset(bounce_buffer, 0, BLOCKSIZE);
+	// copt entire block into bounce buffer
+	if (block_read(block_index, bounce_buffer) == EXIT_ERR) {
+		return EXIT_ERR;
+	}
+	
+	// then copy only the right amount of bytes from the bounce buffer into 
+	// the user supplied buffer
+	memcpy(buf, bounce_buffer,);
+
 	return EXIT_NOERR;
 }
 
