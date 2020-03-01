@@ -52,6 +52,7 @@ uint16_t* table;
 bool file_system_open = false;
 struct file_descriptor fd_open_list[FS_OPEN_MAX_COUNT];
 int open_files = 0;
+int global_fd = 0;
 
 int fs_mount(const char *diskname)
 {
@@ -246,12 +247,13 @@ int fs_open(const char *filename)
 //	int fd = open(filename, O_RDWR | O_TRUNC |
 //		O_CREAT, S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH);
 	
-	file_des.fd = open_files;
+	file_des.fd = global_fd;
 	file_des.offset = 0;
 	strcpy(file_des.filename, filename);
 
 	fd_open_list[open_files] = file_des;
 	open_files += 1;
+	global_fd += 1;
 
 	return file_des.fd;
 }
@@ -259,7 +261,28 @@ int fs_open(const char *filename)
 int fs_close(int fd)
 {
 	/* TODO: Phase 3 */
-	UNUSED(fd);
+	if (fd < 0 || fd >= FS_OPEN_MAX_COUNT) {
+		return EXIT_ERR;
+	}
+	int i;
+	int index = -1;
+	for (i = 0; i < open_files; i++) {
+		if (fd_open_list[i].fd == fd) {
+			index = i;
+			break;
+		}
+	}
+
+	if (index < 0) {
+		return EXIT_ERR;
+	}
+
+	for (i = index; i < open_files - 1; i++) {
+		fd_open_list[i] = fd_open_list[i + 1];
+	}
+
+	open_files -= 1;
+
 	return EXIT_NOERR;
 }
 
@@ -285,7 +308,12 @@ static uint16_t find_block(int fd, int offset)
 	// get filename from fd
 	char filename[FS_FILENAME_LEN];
 	int i;
-	strcpy(filename, fd_open_list[fd].filename);
+	for (i = 0; i < open_files; i++) {
+		if (fd_open_list[i].fd == fd) {
+			strcpy(filename, fd_open_list[i].filename);
+			break;
+		}
+	}
 	for (i = 0; i < FS_FILE_MAX_COUNT; i++) {
 		if (!strcmp(rootdirectory[i].filename, filename)) {
 			index = rootdirectory[i].data_index;
