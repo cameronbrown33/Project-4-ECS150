@@ -217,7 +217,10 @@ int fs_ls(void)
 	int i;
 	for (i = 0; i < FS_FILE_MAX_COUNT; i++) {
 		if (rootdirectory[i].filename[0] != '\0') {
-			printf("%s\n", rootdirectory[i].filename);
+			printf("file: %s, size: %u, data_blk: %u\n",
+					rootdirectory[i].filename,
+					rootdirectory[i].file_size,
+					rootdirectory[i].data_index);
 		}
 	}
 	
