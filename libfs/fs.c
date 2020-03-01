@@ -286,7 +286,11 @@ static uint16_t find_block(int fd, int offset)
 		index = *(block_table[index]);
 		offset -= BLOCK_SIZE;
 	}
-	return index;
+	/* account for super block, fat, and rootdirectory */
+//	uint16_t fat_size;
+//	fat_size = data_blocks * 2 / BLOCK_SIZE;
+//	index += 1 + fat_size + 1;
+	return index + superblock.data_index;
 }
 
 // in case file has to be extended in size
@@ -306,18 +310,39 @@ int fs_read(int fd, void *buf, size_t count)
 {
 	/* TODO: Phase 4 */
 	// get offset from fd
-	uint16_t block_index = find_block(fd, offset);
+	uint16_t block_index;
+	int buf_offset = 0;
 	char *bounce_buffer = malloc(BLOCK_SIZE);
 	memset(bounce_buffer, 0, BLOCKSIZE);
-	// copt entire block into bounce buffer
-	if (block_read(block_index, bounce_buffer) == EXIT_ERR) {
-		return EXIT_ERR;
-	}
-	
-	// then copy only the right amount of bytes from the bounce buffer into 
-	// the user supplied buffer
-	memcpy(buf, bounce_buffer,);
 
-	return EXIT_NOERR;
+	// return -1...
+
+	while (1) {
+		block_index  = find_block(fd, offset);
+
+		// copy entire block into bounce buffer
+		if (block_read(block_index, bounce_buffer) == EXIT_ERR) {
+			return EXIT_ERR;
+		}
+	
+		// then copy only the right amount of bytes from the bounce buffer into 
+		// the user supplied buffer
+		if ((offset % BLOCK_SIZE) + count > BLOCK_SIZE) {
+			memcpy(buf + buf_offset, bounce_buffer + (offset % BLOCK_SIZE)
+					, BLOCK_SIZE - (offset % BLOCK_SIZE));
+			buf_offset += BLOCK_SIZE - (offset % BLOCK_SIZE);
+			offset += BLOCK_SIZE - (offset % BLOCK_SIZE);
+			count -= BLOCK_SIZE - (offset % BLOCK_SIZE);
+		} else {
+			memcpy(buf + buf_offset, bounce_buffer + 
+					(offset % BLOCK_SIZE), count);
+			buf_offset += count;
+			offset += count;
+			break;
+		}
+		// get to eof?
+	}
+
+	return buff_offset; //strlen(buf)
 }
 
