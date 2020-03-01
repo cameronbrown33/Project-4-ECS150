@@ -243,10 +243,10 @@ int fs_open(const char *filename)
 {
 	/* TODO: Phase 3 */
 	struct file_descriptor file_des;
-	int fd = open(filename, O_RDWR | O_TRUNC |
-		O_CREAT, S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH);
+//	int fd = open(filename, O_RDWR | O_TRUNC |
+//		O_CREAT, S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH);
 	
-	file_des.fd = fd;
+	file_des.fd = open_files;
 	file_des.offset = 0;
 	strcpy(file_des.filename, filename);
 
@@ -285,12 +285,7 @@ static uint16_t find_block(int fd, int offset)
 	// get filename from fd
 	char filename[FS_FILENAME_LEN];
 	int i;
-	for (i = 0; i < open_files; i++) {
-		if (fd_open_list[i].fd == fd) {
-			strcpy(filename, fd_open_list[i].filename);
-			break;
-		}
-	}
+	strcpy(filename, fd_open_list[fd].filename);
 	for (i = 0; i < FS_FILE_MAX_COUNT; i++) {
 		if (!strcmp(rootdirectory[i].filename, filename)) {
 			index = rootdirectory[i].data_index;
