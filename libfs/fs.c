@@ -5,6 +5,8 @@
 #include <string.h>
 #include <inttypes.h>
 #include <stdbool.h>
+#include <sys/stat.h>
+#include <fcntl.h>
 
 #include "disk.h"
 #include "fs.h"
@@ -40,13 +42,16 @@ struct __attribute__((__packed__)) root {
 struct __attribute__((__packed__)) file_descriptor {
 	int fd;
 	size_t offset;
+	char filename[FS_FILENAME_LEN];
 };
 
 struct super_block superblock;
 struct FAT fatblock;
 struct root rootdirectory[FS_FILE_MAX_COUNT];
 uint16_t* table;
-bool file_open = false;
+bool file_system_open = false;
+struct file_descriptor fd_open_list[FS_OPEN_MAX_COUNT];
+int open_files = 0;
 
 int fs_mount(const char *diskname)
 {
@@ -73,7 +78,7 @@ int fs_mount(const char *diskname)
 		free(table);
 		return EXIT_ERR;
 	}
-	file_open = true;
+	file_system_open = true;
 	return EXIT_NOERR;
 }
 
@@ -84,13 +89,13 @@ int fs_umount(void)
 		return EXIT_ERR;
 	}
 	free(table);
-	file_open = false;
+	file_system_open = false;
 	return EXIT_NOERR;
 }
 
 int fs_info(void)
 {
-	if (!file_open) {
+	if (!file_system_open) {
 		printf("file\n");
 		return EXIT_ERR;
 	}
@@ -101,15 +106,16 @@ int fs_info(void)
 	printf("rdir_blk=%d\n", superblock.root_index);
 	printf("data_blk=%d\n", superblock.data_index);
 	printf("data_blk_count=%d\n", superblock.data_block_total);
+	int i;
 	int count = 0;
-	for (int i = 0; i < superblock.data_block_total; i++) {
+	for (i = 0; i < superblock.data_block_total; i++) {
 		if ((*fatblock.block_table)[i] == 0) {
 			count++;
 		}
 	}
 	printf("fat_free_ratio=%d/%d\n", count, superblock.data_block_total);
 	count = 0;
-	for (int i = 0; i < FS_FILE_MAX_COUNT; i++) {
+	for (i = 0; i < FS_FILE_MAX_COUNT; i++) {
 		if (rootdirectory[i].data_index == 0) {
 			count++;
 		}
@@ -187,15 +193,15 @@ int fs_delete(const char *filename)
 		}
 	}
 	
-	if (file_index == -1) {
+	if (file_index < 0) {
 		/* no file filename to delete */
 		return EXIT_ERR;
 	}
 
-	if (file_open) {
+//	if (file_system_open) {
 		/* file is currently open */
-		return EXIT_ERR;
-	}
+//		return EXIT_ERR;
+//	}
 
 	/* free all data blocks containing file's contents in the FAT */
 	uint16_t old_index, next_index = rootdirectory[file_index].data_index;
@@ -209,11 +215,9 @@ int fs_delete(const char *filename)
 	/* empty file's entry */
 	rootdirectory[file_index].filename[0] = '\0';
 	rootdirectory[file_index].file_size = 0;
-	*(fatblock.block_table[next_index]) = 0;
+	//	*(fatblock.block_table[next_index]) = 0;
 	//	rootdirectory[next_index].data_index = 0;
 
-
-	UNUSED(filename);
 	return EXIT_NOERR;
 }
 
@@ -238,14 +242,18 @@ int fs_ls(void)
 int fs_open(const char *filename)
 {
 	/* TODO: Phase 3 */
+	struct file_descriptor file_des;
 	int fd = open(filename, O_RDWR | O_TRUNC |
 		O_CREAT, S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH);
 	
-	fd.fd = ;
-	fd.offset = 0;
-	
-	UNUSED(filename);
-	return fd.fd;
+	file_des.fd = fd;
+	file_des.offset = 0;
+	strcpy(file_des.filename, filename);
+
+	fd_open_list[open_files] = file_des;
+	open_files += 1;
+
+	return file_des.fd;
 }
 
 int fs_close(int fd)
@@ -275,15 +283,22 @@ static uint16_t find_block(int fd, int offset)
 {
 	uint16_t index;
 	// get filename from fd
+	char filename[FS_FILENAME_LEN];
 	int i;
+	for (i = 0; i < open_files; i++) {
+		if (fd_open_list[i].fd == fd) {
+			strcpy(filename, fd_open_list[i].filename);
+			break;
+		}
+	}
 	for (i = 0; i < FS_FILE_MAX_COUNT; i++) {
 		if (!strcmp(rootdirectory[i].filename, filename)) {
-			index = rootdirectory[i].data_block;
+			index = rootdirectory[i].data_index;
 			break;
 		}
 	}
 	while (offset >= BLOCK_SIZE) {
-		index = *(block_table[index]);
+		index = *(fatblock.block_table[index]);
 		offset -= BLOCK_SIZE;
 	}
 	/* account for super block, fat, and rootdirectory */
@@ -312,13 +327,14 @@ int fs_read(int fd, void *buf, size_t count)
 	// get offset from fd
 	uint16_t block_index;
 	int buf_offset = 0;
+	int offset = 0;
 	char *bounce_buffer = malloc(BLOCK_SIZE);
-	memset(bounce_buffer, 0, BLOCKSIZE);
+	memset(bounce_buffer, 0, BLOCK_SIZE);
 
 	// return -1...
 
 	while (1) {
-		block_index  = find_block(fd, offset);
+		block_index = find_block(fd, offset);
 
 		// copy entire block into bounce buffer
 		if (block_read(block_index, bounce_buffer) == EXIT_ERR) {
@@ -343,6 +359,6 @@ int fs_read(int fd, void *buf, size_t count)
 		// get to eof?
 	}
 
-	return buff_offset; //strlen(buf)
+	return buf_offset; //strlen(buf)
 }
 
