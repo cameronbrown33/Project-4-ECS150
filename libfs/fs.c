@@ -12,7 +12,6 @@
 #define EXIT_NOERR 0
 #define EXIT_ERR -1
 #define FAT_EOC 0xFFFF
-#define BLOCK_SIZE 4096
 
 #define UNUSED(x) (void)(x)
 
