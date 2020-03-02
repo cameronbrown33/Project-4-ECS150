@@ -37,7 +37,7 @@ struct __attribute__((__packed__)) root {
 };
 
 struct __attribute__((__packed__)) file_descriptor {
-	uint32_t fd;
+	int32_t fd;
 	uint32_t offset;
 	uint32_t file_size;
 	char filename[FS_FILENAME_LEN];
@@ -405,10 +405,28 @@ int fs_write(int fd, void *buf, size_t count)
 int fs_read(int fd, void *buf, size_t count)
 {
 	/* TODO: Phase 4 */
+
+	if (fd < 0) {
+		return EXIT_ERR;
+	}
+	
 	// get offset from fd
+	int i;
+	int index;
+	for (i = 0; i < open_files; i++) {
+		if (fd_open_list[i].fd == fd) {
+			index = i;
+			break;
+		}
+	}
+
+	if (index < 0) {
+		return EXIT_ERR;
+	}
+
 	uint16_t block_index;
 	int buf_offset = 0;
-	int offset = 0;
+	int offset = fd_open_list[index].offset;
 	char *bounce_buffer = malloc(BLOCK_SIZE);
 	memset(bounce_buffer, 0, BLOCK_SIZE);
 
