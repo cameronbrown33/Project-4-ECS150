@@ -37,8 +37,9 @@ struct __attribute__((__packed__)) root {
 };
 
 struct __attribute__((__packed__)) file_descriptor {
-	int fd;
-	size_t offset;
+	uint32_t fd;
+	uint32_t offset;
+	uint32_t file_size;
 	char filename[FS_FILENAME_LEN];
 };
 
@@ -242,13 +243,29 @@ int fs_ls(void)
 int fs_open(const char *filename)
 {
 	/* TODO: Phase 3 */
+	if (filename == NULL) {
+		return EXIT_ERR;
+	}
+
+	int i;
+	int root_index = -1;
+	for (i = 0; i < FS_FILE_MAX_COUNT; i++) {
+		if (!strcmp(rootdirectory[i].filename, filename)) {
+			root_index = i;
+			break;
+		}
+	}
+
+	if (root_index < 0) {
+		return EXIT_ERR;
+	}
+	
 	struct file_descriptor file_des;
-//	int fd = open(filename, O_RDWR | O_TRUNC |
-//		O_CREAT, S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH);
 	
 	file_des.fd = global_fd;
 	file_des.offset = 0;
 	strcpy(file_des.filename, filename);
+	file_des.file_size = rootdirectory[root_index].file_size;
 
 	fd_open_list[open_files] = file_des;
 	open_files += 1;
@@ -260,7 +277,7 @@ int fs_open(const char *filename)
 int fs_close(int fd)
 {
 	/* TODO: Phase 3 */
-	if (fd < 0 || fd >= FS_OPEN_MAX_COUNT) {
+	if (fd < 0) {
 		return EXIT_ERR;
 	}
 	int i;
@@ -288,44 +305,57 @@ int fs_close(int fd)
 int fs_stat(int fd)
 {
 	/* TODO: Phase 3 */
-	if (fd < 0 || fd >= FS_OPEN_MAX_COUNT) {
+	if (fd < 0) {
 		return EXIT_ERR;
 	}
 	
 	int i;
 	char filename[FS_FILENAME_LEN];
-	bool is_open = false;
+	int index = -1;
 	
 	for (i = 0; i < open_files; i++) {
 		if (fd_open_list[i].fd == fd) {
 			strcpy(filename, fd_open_list[i].filename);
-			is_open = true;
+			index = i;
 			break;
 		}
 	}
 
-	if (!is_open) {
+	if (index < 0) {
 		return EXIT_ERR;
 	}
 
 	// printf("+ %s\n", filename);
 
-	int size = -1;
-	for (i = 0; i < FS_FILE_MAX_COUNT; i++) {
-		if (!strcmp(rootdirectory[i].filename, filename)) {
-			size = rootdirectory[i].file_size;
-			break;
-		}
-	}
-
-	return size;
+	return fd_open_list[index].file_size;
 }
 
 int fs_lseek(int fd, size_t offset)
 {
 	/* TODO: Phase 3 */
-	UNUSED(fd);
-	UNUSED(offset);
+	if (fd < 0) {
+		return EXIT_ERR;
+	}
+
+	int i;
+	int index = -1;
+	for (i = 0; i < open_files; i++) {
+		if (fd_open_list[i].fd == fd) {
+			index = i;
+			break;
+		}
+	}
+
+	if (index < 0) {
+		return EXIT_ERR;
+	}
+
+	if (offset > fd_open_list[index].file_size) {
+		return EXIT_ERR;
+	}
+
+	fd_open_list[index].offset = offset;
+	
 	return EXIT_NOERR;
 }
 
