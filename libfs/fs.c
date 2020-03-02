@@ -167,7 +167,7 @@ int fs_create(const char *filename)
 	// size should be set to 0
 	// and the first index on the data blocks should be set to FAT_EOC
 	strcpy(rootdirectory[empty].filename, filename);
-	printf("File: %s\n", rootdirectory[empty].filename);
+	// printf("File: %s\n", rootdirectory[empty].filename);
 	rootdirectory[empty].file_size = 0;
 	rootdirectory[empty].data_index = FAT_EOC;
 	// padding[10];
@@ -189,7 +189,7 @@ int fs_delete(const char *filename)
 	for (i = 0; i < FS_FILE_MAX_COUNT; i++) {
 		if (!strcmp(rootdirectory[i].filename, filename)) {
 			file_index = i;
-			printf("file: %s\n", rootdirectory[file_index].filename);
+//			printf("file: %s\n", rootdirectory[file_index].filename);
 			break;
 		}
 	}
@@ -199,10 +199,12 @@ int fs_delete(const char *filename)
 		return EXIT_ERR;
 	}
 
-//	if (file_system_open) {
-		/* file is currently open */
-//		return EXIT_ERR;
-//	}
+	/* file is still open */
+	for (i = 0; i < open_files; i++) {
+		if (!strcmp(fd_open_list[i].filename, filename)) {
+			return EXIT_ERR;
+		}
+	}
 
 	/* free all data blocks containing file's contents in the FAT */
 	uint16_t old_index, next_index = rootdirectory[file_index].data_index;
@@ -289,8 +291,37 @@ int fs_close(int fd)
 int fs_stat(int fd)
 {
 	/* TODO: Phase 3 */
-	UNUSED(fd);
-	return EXIT_NOERR;
+	if (fd < 0 || fd >= FS_OPEN_MAX_COUNT) {
+		return EXIT_ERR;
+	}
+	
+	int i;
+	char filename[FS_FILENAME_LEN];
+	bool is_open = false;
+	
+	for (i = 0; i < open_files; i++) {
+		if (fd_open_list[i].fd == fd) {
+			strcpy(filename, fd_open_list[i].filename);
+			is_open = true;
+			break;
+		}
+	}
+
+	if (!is_open) {
+		return EXIT_ERR;
+	}
+
+	// printf("+ %s\n", filename);
+
+	int size = -1;
+	for (i = 0; i < FS_FILE_MAX_COUNT; i++) {
+		if (!strcmp(rootdirectory[i].filename, filename)) {
+			size = rootdirectory[i].file_size;
+			break;
+		}
+	}
+
+	return size;
 }
 
 int fs_lseek(int fd, size_t offset)
