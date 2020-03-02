@@ -355,6 +355,8 @@ int fs_lseek(int fd, size_t offset)
 	}
 
 	fd_open_list[index].offset = offset;
+
+	// printf("+ %lu\n", offset);
 	
 	return EXIT_NOERR;
 }
