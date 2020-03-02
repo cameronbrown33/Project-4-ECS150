@@ -5,8 +5,6 @@
 #include <string.h>
 #include <inttypes.h>
 #include <stdbool.h>
-#include <sys/stat.h>
-#include <fcntl.h>
 
 #include "disk.h"
 #include "fs.h"
