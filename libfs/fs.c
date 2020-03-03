@@ -386,7 +386,7 @@ void new_block(uint16_t i)
 }
 		
 /* returns the index of the data block corresponding to file's offset */
-static uint16_t find_block(int fd, int offset, int mode)
+static uint16_t find_block(int fd, int offset, int* mode)
 {
 	uint16_t index = -1;
 	
@@ -403,8 +403,9 @@ static uint16_t find_block(int fd, int offset, int mode)
 	for (i = 0; i < FS_FILE_MAX_COUNT; i++) {
 		if (!strcmp(rootdirectory[i].filename, filename)) {
 			if (rootdirectory[i].data_index == FAT_EOC) {
-				if (mode == WRITE_MODE) {
+				if (*mode == WRITE_MODE) {
 					new_block(i);
+					*mode = 2;
 				}
 				else {
 					return -1;
@@ -417,8 +418,9 @@ static uint16_t find_block(int fd, int offset, int mode)
 
 	while (offset >= BLOCK_SIZE) {
 		if (fatblock.block_table[index] == FAT_EOC) {
-			if (mode == WRITE_MODE) {
+			if (*mode == WRITE_MODE) {
 				new_block(i);
+				*mode = 3;
 			}
 			else {
 				return -1;
@@ -447,7 +449,7 @@ int fs_write(int fd, void *buf, size_t count)
 		if (fd_open_list[i].fd == fd) {
 			fd_index = i;
 			offset = fd_open_list[i].offset;
-			printf("offset: %u\n", offset);
+			// printf("offset: %u\n", offset);
 			break;
 		}
 	}
@@ -458,13 +460,14 @@ int fs_write(int fd, void *buf, size_t count)
 
 
 	int bytes_written = 0;
-//	int bytes_added = 0;
+	int bytes_added = 0;
+	int mode = WRITE_MODE;
 	uint16_t block_index;
 	char *bounce_buffer = malloc(BLOCK_SIZE);
 	memset(bounce_buffer, 0, BLOCK_SIZE);
 
 	while (1) {
-		block_index = find_block(fd, offset, WRITE_MODE);
+		block_index = find_block(fd, offset, &mode);
 //		printf("offset in while: %u\n", offset);
 //		printf("block_index: %u\n", block_index);
 		// read entire block from disk into bounce buffer
@@ -483,6 +486,9 @@ int fs_write(int fd, void *buf, size_t count)
 			memcpy(bounce_buffer + offset, buf + buf_offset, BLOCK_SIZE - offset);
 			block_write(block_index, bounce_buffer);
 			buf_offset += BLOCK_SIZE - offset;
+			if (mode > 1) {
+				bytes_added += BLOCK_SIZE - offset;
+			}
 			bytes_written += BLOCK_SIZE - offset;
 			count -= BLOCK_SIZE - offset;
 			offset += BLOCK_SIZE - offset;
@@ -498,9 +504,13 @@ int fs_write(int fd, void *buf, size_t count)
 			memcpy(bounce_buffer + offset, buf + buf_offset, count);
 			block_write(block_index, bounce_buffer);
 			offset += count;
+			if (mode > 1) {
+				bytes_added += count;
+			}
 			bytes_written += count;
 			break;
 		}
+		mode = WRITE_MODE;
 		// get to eof?
 	}
 	int x = -1;
@@ -511,9 +521,9 @@ int fs_write(int fd, void *buf, size_t count)
 		}
 	}
 
-	rootdirectory[x].file_size += bytes_written;
+	rootdirectory[x].file_size += bytes_added;
 
-	fd_open_list[fd_index].offset = offset;
+	fd_open_list[fd_index].offset = bytes_added;
 
 	return bytes_written;
 }
@@ -540,6 +550,7 @@ int fs_read(int fd, void *buf, size_t count)
 
 	uint16_t block_index;
 	int buf_offset = 0;
+	int mode = READ_MODE;
 	int offset = fd_open_list[index].offset;
 	char *bounce_buffer = malloc(BLOCK_SIZE);
 	memset(bounce_buffer, 0, BLOCK_SIZE);
@@ -547,8 +558,8 @@ int fs_read(int fd, void *buf, size_t count)
 	// return -1...
 
 	while (1) {
-		block_index = find_block(fd, offset, READ_MODE);
-		if (block_index == -1) {
+		block_index = find_block(fd, offset, &mode);
+		if (block_index == 0xFFFF) {
 			break;
 		}
 		offset = offset % BLOCK_SIZE;
@@ -574,6 +585,6 @@ int fs_read(int fd, void *buf, size_t count)
 		// get to eof?
 	}
 
-	fd_open_list[index].offset = offset;
+	fd_open_list[index].offset = buf_offset;
 	return buf_offset; //strlen(buf)
 }
