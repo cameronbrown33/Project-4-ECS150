@@ -12,6 +12,8 @@
 #define EXIT_NOERR 0
 #define EXIT_ERR -1
 #define FAT_EOC 0xFFFF
+#define WRITE_MODE 1
+#define READ_MODE 0
 
 #define UNUSED(x) (void)(x)
 
@@ -384,7 +386,7 @@ void new_block(uint16_t i)
 }
 		
 /* returns the index of the data block corresponding to file's offset */
-static uint16_t find_block(int fd, int offset)
+static uint16_t find_block(int fd, int offset, int mode)
 {
 	uint16_t index = -1;
 	
@@ -401,7 +403,12 @@ static uint16_t find_block(int fd, int offset)
 	for (i = 0; i < FS_FILE_MAX_COUNT; i++) {
 		if (!strcmp(rootdirectory[i].filename, filename)) {
 			if (rootdirectory[i].data_index == FAT_EOC) {
-				new_block(i);
+				if (mode == WRITE_MODE) {
+					new_block(i);
+				}
+				else {
+					return -1;
+				}
 			}
 			index = rootdirectory[i].data_index;
 			break;
@@ -410,7 +417,12 @@ static uint16_t find_block(int fd, int offset)
 
 	while (offset >= BLOCK_SIZE) {
 		if (fatblock.block_table[index] == FAT_EOC) {
-			new_block(i);
+			if (mode == WRITE_MODE) {
+				new_block(i);
+			}
+			else {
+				return -1;
+			}
 		}
 		index = fatblock.block_table[index];
 		offset -= BLOCK_SIZE;
@@ -452,7 +464,7 @@ int fs_write(int fd, void *buf, size_t count)
 	memset(bounce_buffer, 0, BLOCK_SIZE);
 
 	while (1) {
-		block_index = find_block(fd, offset);
+		block_index = find_block(fd, offset, WRITE_MODE);
 //		printf("offset in while: %u\n", offset);
 //		printf("block_index: %u\n", block_index);
 		// read entire block from disk into bounce buffer
@@ -535,7 +547,10 @@ int fs_read(int fd, void *buf, size_t count)
 	// return -1...
 
 	while (1) {
-		block_index = find_block(fd, offset);
+		block_index = find_block(fd, offset, READ_MODE);
+		if (block_index == -1) {
+			break;
+		}
 		offset = offset % BLOCK_SIZE;
 
 		/* copy entire block from disk into bounce buffer */
