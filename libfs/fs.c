@@ -26,7 +26,7 @@ struct __attribute__((__packed__)) super_block {
 };
 
 struct __attribute__((__packed__)) FAT {
-	uint16_t **block_table;
+	uint16_t *block_table;
 };
 
 struct __attribute__((__packed__)) root {
@@ -64,7 +64,7 @@ int fs_mount(const char *diskname)
 		return EXIT_ERR;
 	}
 	table = malloc(superblock.fat_block_total * BLOCK_SIZE);
-	fatblock.block_table = &table;
+	fatblock.block_table = table;
 	
 	for (int i = 0; i < superblock.fat_block_total; i++) {
 		if (block_read(i + 1, table + ((i * BLOCK_SIZE) / 2))) {
@@ -127,7 +127,7 @@ int fs_info(void)
 	int i;
 	int count = 0;
 	for (i = 0; i < superblock.data_block_total; i++) {
-		if ((*fatblock.block_table)[i] == 0) {
+		if (fatblock.block_table[i] == 0) {
 			count++;
 		}
 	}
@@ -229,8 +229,8 @@ int fs_delete(const char *filename)
 	uint16_t old_index, next_index = rootdirectory[file_index].data_index;
 	while (next_index != FAT_EOC) {
 		old_index = next_index;
-		next_index = *(fatblock.block_table[next_index]);
-		*(fatblock.block_table[old_index]) = 0;
+		next_index = fatblock.block_table[next_index];
+		fatblock.block_table[old_index] = 0;
 		// free();
 	}
 
@@ -405,9 +405,10 @@ static uint16_t find_block(int fd, int offset)
 			if (rootdirectory[i].data_index == FAT_EOC) {
 				// put this in other helper function?
 				for (j = 0; j < superblock.fat_block_total * BLOCK_SIZE; j++) {
-					if ( fatblock.block_table[j] == 0) {
+					if (fatblock.block_table[j] == 0) {
+						fatblock.block_table[j] = FAT_EOC;
 						rootdirectory[i].data_index = j;
-//						printf("j: %u\n", j);
+						printf("j: %u\n", j);
 						break;
 					}
 				}
@@ -418,7 +419,7 @@ static uint16_t find_block(int fd, int offset)
 		}
 	}
 	while (offset >= BLOCK_SIZE) {
-		index = *(fatblock.block_table[index]);
+		index = fatblock.block_table[index];
 		offset -= BLOCK_SIZE;
 	}
 	/* account for super block, fat, and rootdirectory */
