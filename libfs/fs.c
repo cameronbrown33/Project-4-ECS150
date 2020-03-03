@@ -54,6 +54,7 @@ int global_fd = 0;
 
 int fs_mount(const char *diskname)
 {
+//	printf("mount start File: %s\n", rootdirectory[0].filename);
 	if (block_disk_open(diskname)) {
 		printf("diskname\n");
 		return EXIT_ERR;
@@ -72,23 +73,41 @@ int fs_mount(const char *diskname)
 			return EXIT_ERR;
 		}
 	}
-	if (block_read(superblock.root_index, rootdirectory)) {
+//	printf("Root index: %u\n", superblock.root_index);
+//	printf("rootdirectory[0].filename: %s\n", rootdirectory[0].filename);
+	if (block_read(superblock.root_index, &rootdirectory)) {
 		printf("read root\n");
 		free(table);
 		return EXIT_ERR;
 	}
+//	printf("rootdirectory[0].filename: %s\n", rootdirectory[0].filename);
 	file_system_open = true;
+//	printf("umount end File: %s\n", rootdirectory[0].filename);
 	return EXIT_NOERR;
 }
 
 int fs_umount(void)
 {
+//	printf("umount start File: %s\n", rootdirectory[0].filename);
+	
+	block_write(0, &superblock); // warnings above
+	
+	for (int i = 0; i < superblock.fat_block_total; i++) {
+		if (block_write(i + 1, table + ((i * BLOCK_SIZE) / 2))) {
+			printf("read fat\n");
+			free(table);
+			return EXIT_ERR;
+		}
+	}
+
+	block_write(superblock.root_index, &rootdirectory); // warnings above
 	if (block_disk_close()) {
 		printf("no file open\n");
 		return EXIT_ERR;
 	}
 	free(table);
 	file_system_open = false;
+//	printf("mount end File: %s\n", rootdirectory[0].filename);
 	return EXIT_NOERR;
 }
 
@@ -149,6 +168,7 @@ int fs_create(const char *filename)
 	for (i = 0; i < FS_FILE_MAX_COUNT; i++) {
 		if (rootdirectory[i].filename[0] == '\0') {
 			// empty
+		//	printf("Empty %s\n", rootdirectory[i].filename);
 			empty = i;
 			break;
 		}
@@ -165,7 +185,8 @@ int fs_create(const char *filename)
 	// size should be set to 0
 	// and the first index on the data blocks should be set to FAT_EOC
 	strcpy(rootdirectory[empty].filename, filename);
-	// printf("File: %s\n", rootdirectory[empty].filename);
+//	printf("index: %u\n", empty);
+//	printf("File: %s\n", rootdirectory[empty].filename);
 	rootdirectory[empty].file_size = 0;
 	rootdirectory[empty].data_index = FAT_EOC;
 	// padding[10];
@@ -225,6 +246,7 @@ int fs_delete(const char *filename)
 int fs_ls(void)
 {
 	/* TODO: Phase 2 */
+//	printf("Ls File: %s\n", rootdirectory[0].filename);
 	printf("FS Ls:\n");
 	// return -1...
 	int i;
@@ -277,6 +299,7 @@ int fs_open(const char *filename)
 int fs_close(int fd)
 {
 	/* TODO: Phase 3 */
+//	printf("close start File: %s\n", rootdirectory[0].filename);
 	if (fd < 0) {
 		return EXIT_ERR;
 	}
@@ -298,6 +321,7 @@ int fs_close(int fd)
 	}
 
 	open_files -= 1;
+//	printf("close end File: %s\n", rootdirectory[0].filename);
 
 	return EXIT_NOERR;
 }
@@ -364,19 +388,32 @@ int fs_lseek(int fd, size_t offset)
 /* returns the index of the data block corresponding to file's offset */
 static uint16_t find_block(int fd, int offset)
 {
-	uint16_t index;
+	uint16_t index = -1;
 	// get filename from fd
 	char filename[FS_FILENAME_LEN];
-	int i;
+	int i, j;
 	for (i = 0; i < open_files; i++) {
 		if (fd_open_list[i].fd == fd) {
 			strcpy(filename, fd_open_list[i].filename);
 			break;
 		}
 	}
+//	printf("find_block filename: %s\n", filename);
 	for (i = 0; i < FS_FILE_MAX_COUNT; i++) {
 		if (!strcmp(rootdirectory[i].filename, filename)) {
+//		printf("data_index: %u\n", rootdirectory[i].data_index);
+			if (rootdirectory[i].data_index == FAT_EOC) {
+				// put this in other helper function?
+				for (j = 0; j < superblock.fat_block_total * BLOCK_SIZE; j++) {
+					if ( fatblock.block_table[j] == 0) {
+						rootdirectory[i].data_index = j;
+//						printf("j: %u\n", j);
+						break;
+					}
+				}
+			}
 			index = rootdirectory[i].data_index;
+//			printf("index: %u\n", index);
 			break;
 		}
 	}
@@ -388,7 +425,9 @@ static uint16_t find_block(int fd, int offset)
 //	uint16_t fat_size;
 //	fat_size = data_blocks * 2 / BLOCK_SIZE;
 //	index += 1 + fat_size + 1;
-	return index + superblock.data_index;
+//	printf("index: %u +: %u\n", index, index + superblock.data_index);
+
+	return index + superblock.data_index; // -1
 }
 
 // in case file has to be extended in size
@@ -397,11 +436,86 @@ static uint16_t find_block(int fd, int offset)
 
 int fs_write(int fd, void *buf, size_t count)
 {
-	/* TODO: Phase 4 */
-	UNUSED(fd);
-	UNUSED(buf);
-	UNUSED(count);
-	return EXIT_NOERR;
+	// -1 if fd is invalid (out of bounds or not open)
+//	printf("in write File: %s\n", rootdirectory[0].filename);
+	if (fd < 0) {
+		return EXIT_ERR;
+	}
+	
+	// get offset from fd
+	int i;
+	int fd_index = -1;
+	uint32_t offset, buf_offset = 0;
+	for (i = 0; i < open_files; i++) {
+		if (fd_open_list[i].fd == fd) {
+			fd_index = i;
+			offset = fd_open_list[i].offset;
+			break;
+		}
+	}
+
+	if (fd_index < 0) {
+		return EXIT_ERR;
+	}
+
+
+	int bytes_written = 0;
+	uint16_t block_index;
+	char *bounce_buffer = malloc(BLOCK_SIZE);
+	memset(bounce_buffer, 0, BLOCK_SIZE);
+
+	while (1) {
+		block_index = find_block(fd, offset);
+//		printf("write offset: %u\n", offset);
+
+		// read entire block into bounce buffer
+		// read block from disk
+		if (block_read(block_index, bounce_buffer) == EXIT_ERR) {
+			return EXIT_ERR;
+		}
+	
+		// attempt to write count bytes of data from buffer buf 
+		// into file referenced by fd
+		// then modify only the part starting from offset with buf
+		// write whole buffer back to block
+		if ((offset % BLOCK_SIZE) + count > BLOCK_SIZE) {
+			memcpy(bounce_buffer + offset, buf + buf_offset, BLOCK_SIZE - count);
+			block_write(block_index, bounce_buffer);
+			buf_offset += BLOCK_SIZE - count;
+			offset += BLOCK_SIZE - count;
+			count -= BLOCK_SIZE - (offset % BLOCK_SIZE);
+			// call helper function
+			// when attempts to write past end of file, 
+			// file automatically extended to 
+			// hold the additional bytes
+			// if disk runs out of space write as many bytes as possible
+			// so number of bytes can be less than count - can be 0
+		} else {
+			memcpy(bounce_buffer + offset, buf + buf_offset, count % BLOCK_SIZE);
+//			printf("write index: %u\n", block_index);
+//			printf("bounce_buffer: %s\n", bounce_buffer);
+			block_write(block_index, bounce_buffer);
+			offset += count;
+			bytes_written += (count % BLOCK_SIZE);
+			break;
+		}
+		// get to eof?
+	}
+	int x = -1;
+	for (i = 0; i < FS_FILE_MAX_COUNT; i++) {
+		if (!strcmp(rootdirectory[i].filename, fd_open_list[fd_index].filename)) {
+			x = i;
+			break;
+		}
+	}
+
+	rootdirectory[x].file_size += bytes_written;
+
+	fd_open_list[fd_index].offset = offset;
+//	printf("write offset: %u\n", offset);
+//	printf("write end File: %s\n", rootdirectory[0].filename);
+
+	return bytes_written;
 }
 
 int fs_read(int fd, void *buf, size_t count)
@@ -414,7 +528,7 @@ int fs_read(int fd, void *buf, size_t count)
 	
 	// get offset from fd
 	int i;
-	int index;
+	int index = -1;
 	for (i = 0; i < open_files; i++) {
 		if (fd_open_list[i].fd == fd) {
 			index = i;
@@ -460,6 +574,7 @@ int fs_read(int fd, void *buf, size_t count)
 		// get to eof?
 	}
 
+	fd_open_list[index].offset = offset;
 	return buf_offset; //strlen(buf)
 }
 
