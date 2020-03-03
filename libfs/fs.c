@@ -404,7 +404,7 @@ static uint16_t find_block(int fd, int offset)
 //		printf("data_index: %u\n", rootdirectory[i].data_index);
 			if (rootdirectory[i].data_index == FAT_EOC) {
 				// put this in other helper function?
-				for (j = 0; j < superblock.fat_block_total * BLOCK_SIZE; j++) {
+				for (j = 0; j < superblock.data_block_total; j++) {
 					if (fatblock.block_table[j] == 0) {
 						fatblock.block_table[j] = FAT_EOC;
 						rootdirectory[i].data_index = j;
@@ -461,12 +461,14 @@ int fs_write(int fd, void *buf, size_t count)
 
 
 	int bytes_written = 0;
+	int bytes_added = 0;
 	uint16_t block_index;
 	char *bounce_buffer = malloc(BLOCK_SIZE);
 	memset(bounce_buffer, 0, BLOCK_SIZE);
 
 	while (1) {
 		block_index = find_block(fd, offset);
+		offset = offset % BLOCK_SIZE;
 //		printf("write offset: %u\n", offset);
 
 		// read entire block into bounce buffer
@@ -479,12 +481,13 @@ int fs_write(int fd, void *buf, size_t count)
 		// into file referenced by fd
 		// then modify only the part starting from offset with buf
 		// write whole buffer back to block
-		if ((offset % BLOCK_SIZE) + count > BLOCK_SIZE) {
-			memcpy(bounce_buffer + offset, buf + buf_offset, BLOCK_SIZE - count);
+		if (offset + count > BLOCK_SIZE) {
+			memcpy(bounce_buffer + offset, buf + buf_offset, BLOCK_SIZE - offset);
 			block_write(block_index, bounce_buffer);
-			buf_offset += BLOCK_SIZE - count;
-			offset += BLOCK_SIZE - count;
-			count -= BLOCK_SIZE - (offset % BLOCK_SIZE);
+			buf_offset += BLOCK_SIZE - offset;
+			offset += BLOCK_SIZE - offset;
+			bytes_written += BLOCK_SIZE - offset;
+			count -= BLOCK_SIZE - offset;
 			// call helper function
 			// when attempts to write past end of file, 
 			// file automatically extended to 
@@ -492,12 +495,12 @@ int fs_write(int fd, void *buf, size_t count)
 			// if disk runs out of space write as many bytes as possible
 			// so number of bytes can be less than count - can be 0
 		} else {
-			memcpy(bounce_buffer + offset, buf + buf_offset, count % BLOCK_SIZE);
+			memcpy(bounce_buffer + offset, buf + buf_offset, count);
 //			printf("write index: %u\n", block_index);
 //			printf("bounce_buffer: %s\n", bounce_buffer);
 			block_write(block_index, bounce_buffer);
 			offset += count;
-			bytes_written += (count % BLOCK_SIZE);
+			bytes_written += count;
 			break;
 		}
 		// get to eof?
@@ -510,7 +513,7 @@ int fs_write(int fd, void *buf, size_t count)
 		}
 	}
 
-	rootdirectory[x].file_size += bytes_written;
+	rootdirectory[x].file_size += bytes_added;
 
 	fd_open_list[fd_index].offset = offset;
 //	printf("write offset: %u\n", offset);
@@ -551,6 +554,7 @@ int fs_read(int fd, void *buf, size_t count)
 
 	while (1) {
 		block_index = find_block(fd, offset);
+		offset = offset % BLOCK_SIZE;
 
 		// copy entire block into bounce buffer
 		if (block_read(block_index, bounce_buffer) == EXIT_ERR) {
@@ -559,15 +563,13 @@ int fs_read(int fd, void *buf, size_t count)
 	
 		// then copy only the right amount of bytes from the bounce buffer into 
 		// the user supplied buffer
-		if ((offset % BLOCK_SIZE) + count > BLOCK_SIZE) {
-			memcpy(buf + buf_offset, bounce_buffer + (offset % BLOCK_SIZE)
-					, BLOCK_SIZE - (offset % BLOCK_SIZE));
-			buf_offset += BLOCK_SIZE - (offset % BLOCK_SIZE);
-			offset += BLOCK_SIZE - (offset % BLOCK_SIZE);
-			count -= BLOCK_SIZE - (offset % BLOCK_SIZE);
+		if (offset + count > BLOCK_SIZE) {
+			memcpy(buf + buf_offset, bounce_buffer + offset, BLOCK_SIZE - offset);
+			buf_offset += BLOCK_SIZE - offset;
+			offset += BLOCK_SIZE - offset;
+			count -= BLOCK_SIZE - offset;
 		} else {
-			memcpy(buf + buf_offset, bounce_buffer + 
-					(offset % BLOCK_SIZE), count);
+			memcpy(buf + buf_offset, bounce_buffer + offset, count);
 			buf_offset += count;
 			offset += count;
 			break;
