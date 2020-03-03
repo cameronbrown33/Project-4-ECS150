@@ -405,7 +405,7 @@ static uint16_t find_block(int fd, int offset, int* mode)
 			if (rootdirectory[i].data_index == FAT_EOC) {
 				if (*mode == WRITE_MODE) {
 					new_block(i);
-					*mode = 2;
+					*mode += 1;
 				}
 				else {
 					return -1;
@@ -420,7 +420,7 @@ static uint16_t find_block(int fd, int offset, int* mode)
 		if (fatblock.block_table[index] == FAT_EOC) {
 			if (*mode == WRITE_MODE) {
 				new_block(i);
-				*mode = 3;
+				*mode += 1;
 			}
 			else {
 				return -1;
@@ -461,9 +461,13 @@ int fs_write(int fd, void *buf, size_t count)
 		return EXIT_ERR;
 	}
 
-
 	int bytes_written = 0;
 	int bytes_added = 0;
+	if (offset / BLOCK_SIZE > file_size / BLOCK_SIZE) {
+		bytes_added += file_size % BLOCK_SIZE;
+		file_size = 0;
+	}
+
 	int mode = WRITE_MODE;
 	uint16_t block_index;
 	char *bounce_buffer = malloc(BLOCK_SIZE);
@@ -489,13 +493,17 @@ int fs_write(int fd, void *buf, size_t count)
 			memcpy(bounce_buffer + offset, buf + buf_offset, BLOCK_SIZE - offset);
 			block_write(block_index, bounce_buffer);
 			buf_offset += BLOCK_SIZE - offset;
-			if (mode > 1) {
-				bytes_added += BLOCK_SIZE - offset;
-			}
 			bytes_written += BLOCK_SIZE - offset;
 			count -= BLOCK_SIZE - offset;
-			file_size -= BLOCK_SIZE - offset;
-			offset += BLOCK_SIZE - offset;
+			if (mode > 1) {
+				bytes_added += (mode - 2) * BLOCK_SIZE;
+			}
+			bytes_added += BLOCK_SIZE - file_size;
+			if (file_size > BLOCK_SIZE) {
+				file_size -= BLOCK_SIZE - offset;
+			}
+			file_size = 0;
+			offset = 0;
 			//	printf("BLOCK_SIZE - offset: %u offset: %u \n\n", BLOCK_SIZE - offset, offset);
 			//	printf("count: %lu\n\n", count);
 		// call helper function
@@ -507,9 +515,9 @@ int fs_write(int fd, void *buf, size_t count)
 		} else {
 			memcpy(bounce_buffer + offset, buf + buf_offset, count);
 			block_write(block_index, bounce_buffer);
-			offset += count;
 			if (mode > 1) {
-				bytes_added += count;
+				bytes_added += (mode - 2) * BLOCK_SIZE;
+				bytes_added += count + offset - file_size;
 			}
 			bytes_written += count;
 			break;
@@ -589,8 +597,8 @@ int fs_read(int fd, void *buf, size_t count)
 				memcpy(buf + buf_offset, bounce_buffer + offset, BLOCK_SIZE - offset);
 				buf_offset += BLOCK_SIZE - offset;
 				count -= BLOCK_SIZE - offset;
-				offset += BLOCK_SIZE - offset;
 				file_size -= BLOCK_SIZE - offset;
+				offset = 0;
 			}
 		} else {
 			if (offset + count > file_size) {
