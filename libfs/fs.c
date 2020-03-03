@@ -443,12 +443,13 @@ int fs_write(int fd, void *buf, size_t count)
 	
 	int i;
 	int fd_index = -1;
-	uint32_t offset, buf_offset = 0;
+	uint32_t offset, old_offset, buf_offset = 0;
 	/* get offset from fd */
 	for (i = 0; i < open_files; i++) {
 		if (fd_open_list[i].fd == fd) {
 			fd_index = i;
 			offset = fd_open_list[i].offset;
+			old_offset = offset;
 			// printf("offset: %u\n", offset);
 			break;
 		}
@@ -523,7 +524,7 @@ int fs_write(int fd, void *buf, size_t count)
 
 	rootdirectory[x].file_size += bytes_added;
 
-	fd_open_list[fd_index].offset = bytes_added;
+	fd_open_list[fd_index].offset = old_offset + bytes_written;
 
 	return bytes_written;
 }
