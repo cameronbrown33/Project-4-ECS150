@@ -444,11 +444,13 @@ int fs_write(int fd, void *buf, size_t count)
 	int i;
 	int fd_index = -1;
 	uint32_t offset, old_offset, buf_offset = 0;
+	uint32_t file_size = 0;
 	/* get offset from fd */
 	for (i = 0; i < open_files; i++) {
 		if (fd_open_list[i].fd == fd) {
 			fd_index = i;
-			offset = fd_open_list[i].offset;
+			offset = fd_open_list[fd_index].offset;
+			file_size = fd_open_list[fd_index].file_size;
 			old_offset = offset;
 			// printf("offset: %u\n", offset);
 			break;
@@ -492,15 +494,16 @@ int fs_write(int fd, void *buf, size_t count)
 			}
 			bytes_written += BLOCK_SIZE - offset;
 			count -= BLOCK_SIZE - offset;
+			file_size -= BLOCK_SIZE - offset;
 			offset += BLOCK_SIZE - offset;
-		//	printf("BLOCK_SIZE - offset: %u offset: %u \n\n", BLOCK_SIZE - offset, offset);
-		///	printf("count: %lu\n\n", count);
-			// call helper function
-			// when attempts to write past end of file, 
-			// file automatically extended to 
-			// hold the additional bytes
-			// if disk runs out of space write as many bytes as possible
-			// so number of bytes can be less than count - can be 0
+			//	printf("BLOCK_SIZE - offset: %u offset: %u \n\n", BLOCK_SIZE - offset, offset);
+			//	printf("count: %lu\n\n", count);
+		// call helper function
+		// when attempts to write past end of file, 
+		// file automatically extended to 
+		// hold the additional bytes
+		// if disk runs out of space write as many bytes as possible
+		// so number of bytes can be less than count - can be 0
 		} else {
 			memcpy(bounce_buffer + offset, buf + buf_offset, count);
 			block_write(block_index, bounce_buffer);
@@ -538,9 +541,12 @@ int fs_read(int fd, void *buf, size_t count)
 	/* get offset from fd */
 	int i;
 	int index = -1;
+	uint32_t offset, file_size = 0;
 	for (i = 0; i < open_files; i++) {
 		if (fd_open_list[i].fd == fd) {
 			index = i;
+			offset = fd_open_list[index].offset;
+			file_size = fd_open_list[index].file_size;
 			break;
 		}
 	}
@@ -552,7 +558,6 @@ int fs_read(int fd, void *buf, size_t count)
 	uint16_t block_index;
 	int buf_offset = 0;
 	int mode = READ_MODE;
-	int offset = fd_open_list[index].offset;
 	char *bounce_buffer = malloc(BLOCK_SIZE);
 	memset(bounce_buffer, 0, BLOCK_SIZE);
 
@@ -564,7 +569,9 @@ int fs_read(int fd, void *buf, size_t count)
 			break;
 		}
 		offset = offset % BLOCK_SIZE;
-
+		if (offset >= file_size) {
+			break;
+		}
 		/* copy entire block from disk into bounce buffer */
 		if (block_read(block_index, bounce_buffer) == EXIT_ERR) {
 			return EXIT_ERR;
@@ -573,14 +580,27 @@ int fs_read(int fd, void *buf, size_t count)
 		// then copy only the right amount of bytes from the bounce buffer into 
 		// the user supplied buffer
 		if (offset + count > BLOCK_SIZE) {
-			memcpy(buf + buf_offset, bounce_buffer + offset, BLOCK_SIZE - offset);
-			buf_offset += BLOCK_SIZE - offset;
-			count -= BLOCK_SIZE - offset;
-			offset += BLOCK_SIZE - offset;
+			if (file_size < BLOCK_SIZE) {
+				memcpy(buf + buf_offset, bounce_buffer + offset, file_size - offset);
+				buf_offset += file_size - offset;
+				break;
+			}
+			else {
+				memcpy(buf + buf_offset, bounce_buffer + offset, BLOCK_SIZE - offset);
+				buf_offset += BLOCK_SIZE - offset;
+				count -= BLOCK_SIZE - offset;
+				offset += BLOCK_SIZE - offset;
+				file_size -= BLOCK_SIZE - offset;
+			}
 		} else {
-			memcpy(buf + buf_offset, bounce_buffer + offset, count);
-			buf_offset += count;
-			offset += count;
+			if (offset + count > file_size) {
+				memcpy(buf + buf_offset, bounce_buffer + offset, file_size - offset);
+				buf_offset += file_size - offset;
+			}
+			else {
+				memcpy(buf + buf_offset, bounce_buffer + offset, count);
+				buf_offset += count;
+			}
 			break;
 		}
 		// get to eof?
