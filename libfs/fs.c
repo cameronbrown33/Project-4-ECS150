@@ -43,6 +43,7 @@ struct __attribute__((__packed__)) file_descriptor {
 	uint32_t offset;
 	uint32_t file_size;
 	char filename[FS_FILENAME_LEN];
+	int root_index;
 };
 
 struct super_block superblock;
@@ -267,6 +268,7 @@ int fs_open(const char *filename)
 	file_des.offset = 0;
 	strcpy(file_des.filename, filename);
 	file_des.file_size = rootdirectory[root_index].file_size;
+	file_des.root_index = root_index;
 
 	fd_open_list[open_files] = file_des;
 	open_files += 1;
@@ -310,12 +312,12 @@ int fs_stat(int fd)
 	}
 	
 	int i;
-	char filename[FS_FILENAME_LEN];
+	// char filename[FS_FILENAME_LEN];
 	int index = -1;
 	
 	for (i = 0; i < open_files; i++) {
 		if (fd_open_list[i].fd == fd) {
-			strcpy(filename, fd_open_list[i].filename);
+			// strcpy(filename, fd_open_list[i].filename);
 			index = i;
 			break;
 		}
@@ -524,15 +526,8 @@ int fs_write(int fd, void *buf, size_t count)
 		mode = WRITE_MODE;
 		// get to eof?
 	}
-	int x = -1;
-	for (i = 0; i < FS_FILE_MAX_COUNT; i++) {
-		if (!strcmp(rootdirectory[i].filename, fd_open_list[fd_index].filename)) {
-			x = i;
-			break;
-		}
-	}
 
-	rootdirectory[x].file_size += bytes_added;
+	rootdirectory[fd_open_list[fd_index].root_index].file_size += bytes_added;
 
 	fd_open_list[fd_index].offset = old_offset + bytes_written;
 
