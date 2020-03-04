@@ -551,7 +551,7 @@ int fs_read(int fd, void *buf, size_t count)
 	if (fd < 0) {
 		return EXIT_ERR;
 	}
-	
+	// buf_offset and offset are the same	
 	/* get offset from fd */
 	int i;
 	int index = -1;
@@ -582,8 +582,8 @@ int fs_read(int fd, void *buf, size_t count)
 		if (block_index == 0xFFFF) {
 			break;
 		}
-		offset = offset % BLOCK_SIZE;
-		if (offset >= file_size) {
+		uint16_t tmp_offset = offset % BLOCK_SIZE;
+		if (tmp_offset >= file_size) {
 			break;
 		}
 		/* copy entire block from disk into bounce buffer */
@@ -593,27 +593,30 @@ int fs_read(int fd, void *buf, size_t count)
 	
 		// then copy only the right amount of bytes from the bounce buffer into 
 		// the user supplied buffer
-		if (offset + count > BLOCK_SIZE) {
+		if (tmp_offset + count > BLOCK_SIZE) {
 			if (file_size < BLOCK_SIZE) {
-				memcpy(buf + buf_offset, bounce_buffer + offset, file_size - offset);
-				buf_offset += file_size - offset;
+				memcpy(buf + buf_offset, bounce_buffer + tmp_offset, file_size - tmp_offset);
+				buf_offset += file_size - tmp_offset;
+				offset += file_size - tmp_offset;
 				break;
 			}
 			else {
-				memcpy(buf + buf_offset, bounce_buffer + offset, BLOCK_SIZE - offset);
-				buf_offset += BLOCK_SIZE - offset;
-				count -= BLOCK_SIZE - offset;
-				file_size -= BLOCK_SIZE - offset;
-				offset = 0;
+				memcpy(buf + buf_offset, bounce_buffer + tmp_offset, BLOCK_SIZE - tmp_offset);
+				buf_offset += BLOCK_SIZE - tmp_offset;
+				count -= BLOCK_SIZE - tmp_offset;
+				file_size -= BLOCK_SIZE - tmp_offset;
+				offset += BLOCK_SIZE - tmp_offset;
 			}
 		} else {
-			if (offset + count > file_size) {
-				memcpy(buf + buf_offset, bounce_buffer + offset, file_size - offset);
-				buf_offset += file_size - offset;
+			if (tmp_offset + count > file_size) {
+				memcpy(buf + buf_offset, bounce_buffer + tmp_offset, file_size - tmp_offset);
+				buf_offset += file_size - tmp_offset;
+				offset += file_size - tmp_offset;
 			}
 			else {
-				memcpy(buf + buf_offset, bounce_buffer + offset, count);
+				memcpy(buf + buf_offset, bounce_buffer + tmp_offset, count);
 				buf_offset += count;
+				offset += count;
 			}
 			break;
 		}
