@@ -57,14 +57,17 @@ int global_fd = 0;
 
 int fs_mount(const char *diskname)
 {
+	/* disk cannot be opened */
 	if (block_disk_open(diskname)) {
 		printf("diskname\n");
 		return EXIT_ERR;
 	}	
+	
 	if (block_read(0, &superblock)) {
 		printf("read super\n");
 		return EXIT_ERR;
 	}
+	
 	table = malloc(superblock.fat_block_total * BLOCK_SIZE);
 	fatblock.block_table = table;
 	
@@ -75,39 +78,58 @@ int fs_mount(const char *diskname)
 			return EXIT_ERR;
 		}
 	}
+	
 	if (block_read(superblock.root_index, &rootdirectory)) {
 		printf("read root\n");
 		free(table);
 		return EXIT_ERR;
 	}
+	
 	file_system_open = true;
 	return EXIT_NOERR;
 }
 
 int fs_umount(void)
 {
-	block_write(0, &superblock); // warnings above
-	
+	/* still open file descriptors */
+	if (open_files) {
+		printf("open file descriptors\n");
+		return EXIT_ERR;
+	}
+
+	if (block_write(0, &superblock)) {
+		printf("write super\n");
+		return EXIT_ERR;
+	}
+
 	for (int i = 0; i < superblock.fat_block_total; i++) {
 		if (block_write(i + 1, table + ((i * BLOCK_SIZE) / 2))) {
-			printf("read fat\n");
+			printf("write fat\n");
 			free(table);
 			return EXIT_ERR;
 		}
 	}
 
-	block_write(superblock.root_index, &rootdirectory); // warnings above
+	if (block_write(superblock.root_index, &rootdirectory)) {
+		printf("write root\n");
+		return EXIT_ERR;
+	}
+
+	/* close underlying virtual disk file */
 	if (block_disk_close()) {
 		printf("no file open\n");
 		return EXIT_ERR;
 	}
+
 	free(table);
 	file_system_open = false;
+	
 	return EXIT_NOERR;
 }
 
 int fs_info(void)
 {
+	int i, count = 0;
 	if (!file_system_open) {
 		printf("file\n");
 		return EXIT_ERR;
@@ -119,21 +141,24 @@ int fs_info(void)
 	printf("rdir_blk=%d\n", superblock.root_index);
 	printf("data_blk=%d\n", superblock.data_index);
 	printf("data_blk_count=%d\n", superblock.data_block_total);
-	int i;
-	int count = 0;
+	
 	for (i = 0; i < superblock.data_block_total; i++) {
 		if (fatblock.block_table[i] == 0) {
 			count++;
 		}
 	}
+	
 	printf("fat_free_ratio=%d/%d\n", count, superblock.data_block_total);
+	
 	count = 0;
 	for (i = 0; i < FS_FILE_MAX_COUNT; i++) {
 		if (rootdirectory[i].data_index == 0) {
 			count++;
 		}
 	}
+	
 	printf("rdir_free_ratio=%d/%d\n", count, FS_FILE_MAX_COUNT);
+	
 	return EXIT_NOERR;
 }
 
@@ -145,7 +170,7 @@ int fs_create(const char *filename)
 	}
 
 	/* filename too long */
-	if (strlen(filename) > FS_FILENAME_LEN) {
+	if (strlen(filename) >= FS_FILENAME_LEN) {
 		return EXIT_ERR;
 	}
 
@@ -185,7 +210,7 @@ int fs_delete(const char *filename)
 	if (filename == NULL) {
 		return EXIT_ERR;
 	}
-
+	
 	/* find the file */
 	int i;
 	int file_index = -1;
@@ -214,14 +239,12 @@ int fs_delete(const char *filename)
 		old_index = next_index;
 		next_index = fatblock.block_table[next_index];
 		fatblock.block_table[old_index] = 0;
-		// free();
 	}
 
 	/* empty file's entry */
 	rootdirectory[file_index].filename[0] = '\0';
 	rootdirectory[file_index].file_size = 0;
-	//	*(fatblock.block_table[next_index]) = 0;
-	//	rootdirectory[next_index].data_index = 0;
+	fatblock.block_table[next_index] = 0;
 
 	return EXIT_NOERR;
 }
@@ -229,7 +252,12 @@ int fs_delete(const char *filename)
 int fs_ls(void)
 {
 	printf("FS Ls:\n");
-	// return -1...
+
+	/* no underlying virtual disk open */
+	if (!file_system_open) {
+		return EXIT_ERR;
+	}
+	
 	int i;
 	for (i = 0; i < FS_FILE_MAX_COUNT; i++) {
 		if (rootdirectory[i].filename[0] != '\0') {
@@ -245,12 +273,14 @@ int fs_ls(void)
 
 int fs_open(const char *filename)
 {
+	int root_index = -1;
+	struct file_descriptor file_des;
+	
 	if (filename == NULL) {
 		return EXIT_ERR;
 	}
 
 	int i;
-	int root_index = -1;
 	for (i = 0; i < FS_FILE_MAX_COUNT; i++) {
 		if (!strcmp(rootdirectory[i].filename, filename)) {
 			root_index = i;
@@ -261,8 +291,6 @@ int fs_open(const char *filename)
 	if (root_index < 0) {
 		return EXIT_ERR;
 	}
-	
-	struct file_descriptor file_des;
 	
 	file_des.fd = global_fd;
 	file_des.offset = 0;
