@@ -280,6 +280,10 @@ int fs_open(const char *filename)
 		return EXIT_ERR;
 	}
 
+	if (open_files == FS_OPEN_MAX_COUNT) {
+		return EXIT_ERR;
+	}
+
 	int i;
 	for (i = 0; i < FS_FILE_MAX_COUNT; i++) {
 		if (!strcmp(rootdirectory[i].filename, filename)) {
@@ -320,6 +324,7 @@ int fs_close(int fd)
 		}
 	}
 
+	/* file fd not currently open */
 	if (index < 0) {
 		return EXIT_ERR;
 	}
@@ -340,24 +345,18 @@ int fs_stat(int fd)
 	}
 	
 	int i;
-	// char filename[FS_FILENAME_LEN];
 	int index = -1;
-	
 	for (i = 0; i < open_files; i++) {
 		if (fd_open_list[i].fd == fd) {
-			// strcpy(filename, fd_open_list[i].filename);
 			index = i;
 			break;
 		}
 	}
 
+	/* file fd not currently open */
 	if (index < 0) {
 		return EXIT_ERR;
 	}
-
-	// printf("+ %s\n", filename);
-	
-	// printf("+ fd index status %d\n", index);
 
 	return rootdirectory[fd_open_list[index].root_index].file_size;
 }
@@ -387,19 +386,15 @@ int fs_lseek(int fd, size_t offset)
 
 	fd_open_list[index].offset = offset;
 
-	// printf("+ %lu\n", offset);
-	
 	return EXIT_NOERR;
 }
 
-// in case file has to be extended in size
-// allocates a new data block and link it at the end of the file's data block chain
-// allocation of new blocks should follow the first fit strategy - first block available from beginning of fat
-				// update blocks size?
+/* allocates new data block and links it at end of file's data block chain */
 void new_block(uint16_t i)
 {	
 	int j;
 	uint16_t next_index;
+	
 	for (j = 0; j < superblock.data_block_total; j++) {
 		if (fatblock.block_table[j] == 0) {
 			fatblock.block_table[j] = FAT_EOC;
@@ -421,10 +416,10 @@ void new_block(uint16_t i)
 static uint16_t find_block(int fd, int offset, int* mode)
 {
 	uint16_t index = -1;
-	
-	/* get filename from fd */
 	char filename[FS_FILENAME_LEN];
 	int i;
+	
+	/* get filename from fd */
 	for (i = 0; i < open_files; i++) {
 		if (fd_open_list[i].fd == fd) {
 			strcpy(filename, fd_open_list[i].filename);
@@ -449,7 +444,6 @@ static uint16_t find_block(int fd, int offset, int* mode)
 	}
 
 	while (offset >= BLOCK_SIZE) {
-//		printf("here\n");
 		if (fatblock.block_table[index] == FAT_EOC) {
 			if (*mode == WRITE_MODE) {
 				new_block(i);
@@ -459,14 +453,12 @@ static uint16_t find_block(int fd, int offset, int* mode)
 				return -1;
 			}
 		}
-//		printf("offset: %u\n", offset);
 		index = fatblock.block_table[index];
-//		printf("index: %u\n", index);
 		offset -= BLOCK_SIZE;
 	}
 	
 	/* account for super block, fat, and rootdirectory */
-	return index + superblock.data_index; // -1
+	return index + superblock.data_index;
 }
 	
 int fs_write(int fd, void *buf, size_t count)
@@ -487,8 +479,6 @@ int fs_write(int fd, void *buf, size_t count)
 			offset = fd_open_list[fd_index].offset;
 			file_size = fd_open_list[fd_index].file_size;
 			old_offset = offset;
-			// printf("file found is \"%s\"\n", fd_open_list[fd_index].filename);
-			// printf("offset: %u\n", offset);
 			break;
 		}
 	}
@@ -512,11 +502,8 @@ int fs_write(int fd, void *buf, size_t count)
 
 	while (1) {
 		block_index = find_block(fd, offset, &mode);
-//		printf("offset in while: %u\n", offset);
-//		printf("block_index: %u\n", block_index);
 		// read entire block from disk into bounce buffer
 		uint16_t tmp_offset = offset % BLOCK_SIZE;
-//		printf("offset: %u\n", offset);
 		if (block_read(block_index, bounce_buffer) == EXIT_ERR) {
 			return EXIT_ERR;
 		}
@@ -526,7 +513,6 @@ int fs_write(int fd, void *buf, size_t count)
 		// then modify only the part starting from offset with buf
 		// write whole buffer back to block
 		if (tmp_offset + count > BLOCK_SIZE) {
-		//	printf("count: %lu\n", count);
 			memcpy(bounce_buffer + tmp_offset, buf + buf_offset, BLOCK_SIZE - tmp_offset);
 			block_write(block_index, bounce_buffer);
 			buf_offset += BLOCK_SIZE - tmp_offset;
@@ -540,8 +526,6 @@ int fs_write(int fd, void *buf, size_t count)
 				file_size = 0;
 			}
 			offset += BLOCK_SIZE - tmp_offset;
-			//	printf("BLOCK_SIZE - offset: %u offset: %u \n\n", BLOCK_SIZE - offset, offset);
-			//	printf("count: %lu\n\n", count);
 		// call helper function
 		// when attempts to write past end of file, 
 		// file automatically extended to 
@@ -562,13 +546,9 @@ int fs_write(int fd, void *buf, size_t count)
 		// get to eof?
 	}
 
-	// printf("+ bytes added %d\n", bytes_added);
-	// printf("+ fd index found %d\n", fd_index);
 	int index = fd_open_list[fd_index].root_index;
 	rootdirectory[index].file_size += bytes_added;
 
-	// printf("+ root directory size %d\n", rootdirectory[index].file_size);
-//	printf("final offset: %u\n", offset);
 	fd_open_list[fd_index].offset = old_offset + bytes_written;
 
 	return bytes_written;
