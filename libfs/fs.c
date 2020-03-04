@@ -244,7 +244,7 @@ int fs_delete(const char *filename)
 	/* empty file's entry */
 	rootdirectory[file_index].filename[0] = '\0';
 	rootdirectory[file_index].file_size = 0;
-	fatblock.block_table[next_index] = 0;
+	rootdirectory[file_index].data_index = 0;
 
 	return EXIT_NOERR;
 }
