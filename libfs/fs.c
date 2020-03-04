@@ -390,13 +390,15 @@ int fs_lseek(int fd, size_t offset)
 }
 
 /* allocates new data block and links it at end of file's data block chain */
-void new_block(uint16_t i)
+bool new_block(uint16_t i)
 {	
 	int j;
 	uint16_t next_index;
+	bool found_empty = false;
 	
 	for (j = 0; j < superblock.data_block_total; j++) {
 		if (fatblock.block_table[j] == 0) {
+			found_empty = true;
 			fatblock.block_table[j] = FAT_EOC;
 			if (rootdirectory[i].data_index == FAT_EOC) {
 				rootdirectory[i].data_index = j;
@@ -410,12 +412,13 @@ void new_block(uint16_t i)
 			break;
 		}
 	}
+	return found_empty;
 }
 		
 /* returns the index of the data block corresponding to file's offset */
-static uint16_t find_block(int fd, int offset, int* mode)
+static int16_t find_block(int fd, int offset, int* mode)
 {
-	uint16_t index = -1;
+	int16_t index = -1;
 	char filename[FS_FILENAME_LEN];
 	int i;
 	
@@ -431,8 +434,11 @@ static uint16_t find_block(int fd, int offset, int* mode)
 		if (!strcmp(rootdirectory[i].filename, filename)) {
 			if (rootdirectory[i].data_index == FAT_EOC) {
 				if (*mode == WRITE_MODE) {
-					new_block(i);
-					*mode += 1;
+					if (new_block(i)) {
+						*mode += 1;
+					} else {
+						return EXIT_ERR;
+					}
 				}
 				else {
 					return -1;
@@ -446,11 +452,14 @@ static uint16_t find_block(int fd, int offset, int* mode)
 	while (offset >= BLOCK_SIZE) {
 		if (fatblock.block_table[index] == FAT_EOC) {
 			if (*mode == WRITE_MODE) {
-				new_block(i);
-				*mode += 1;
+				if (new_block(i)) {
+					*mode += 1;
+				} else {
+					return EXIT_ERR;
+				}
 			}
 			else {
-				return -1;
+				return EXIT_ERR;
 			}
 		}
 		index = fatblock.block_table[index];
@@ -463,7 +472,7 @@ static uint16_t find_block(int fd, int offset, int* mode)
 	
 int fs_write(int fd, void *buf, size_t count)
 {
-	// -1 if fd is invalid (out of bounds or not open)
+	/* invalid */
 	if (fd < 0) {
 		return EXIT_ERR;
 	}
@@ -471,7 +480,12 @@ int fs_write(int fd, void *buf, size_t count)
 	int i;
 	int fd_index = -1;
 	uint32_t offset, old_offset, buf_offset = 0;
-	uint32_t file_size = 0;
+	uint32_t file_size = 0;	
+	int bytes_written = 0;
+	int bytes_added = 0;
+	int mode = WRITE_MODE;
+	int16_t block_index;
+
 	/* get offset from fd */
 	for (i = 0; i < open_files; i++) {
 		if (fd_open_list[i].fd == fd) {
@@ -483,6 +497,7 @@ int fs_write(int fd, void *buf, size_t count)
 		}
 	}
 
+	/* file fd not currently open */
 	if (fd_index < 0) {
 		return EXIT_ERR;
 	}
@@ -491,29 +506,29 @@ int fs_write(int fd, void *buf, size_t count)
 		return EXIT_ERR;
 	}
 	
-	int bytes_written = 0;
-	int bytes_added = 0;
-	int mode = WRITE_MODE;
-	uint16_t block_index;
 	char *bounce_buffer = malloc(BLOCK_SIZE);
 	memset(bounce_buffer, 0, BLOCK_SIZE);
 
 	file_size -= (offset / BLOCK_SIZE) * BLOCK_SIZE;
 
 	while (1) {
-		block_index = find_block(fd, offset, &mode);
-		// read entire block from disk into bounce buffer
 		uint16_t tmp_offset = offset % BLOCK_SIZE;
+		block_index = find_block(fd, offset, &mode);
+		
+		/* data blocks are all full */
+		if (block_index == -1) {
+			break;
+		}
+
+		/* read entire block from disk into bounce buffer */
 		if (block_read(block_index, bounce_buffer) == EXIT_ERR) {
 			return EXIT_ERR;
 		}
 	
-		// attempt to write count bytes of data from buffer buf 
-		// into file referenced by fd
-		// then modify only the part starting from offset with buf
-		// write whole buffer back to block
+		/* write count bytes of data from buf and write whole buffer back to block */
 		if (tmp_offset + count > BLOCK_SIZE) {
-			memcpy(bounce_buffer + tmp_offset, buf + buf_offset, BLOCK_SIZE - tmp_offset);
+			memcpy(bounce_buffer + tmp_offset, 
+					buf + buf_offset, BLOCK_SIZE - tmp_offset);
 			block_write(block_index, bounce_buffer);
 			buf_offset += BLOCK_SIZE - tmp_offset;
 			bytes_written += BLOCK_SIZE - tmp_offset;
@@ -526,12 +541,6 @@ int fs_write(int fd, void *buf, size_t count)
 				file_size = 0;
 			}
 			offset += BLOCK_SIZE - tmp_offset;
-		// call helper function
-		// when attempts to write past end of file, 
-		// file automatically extended to 
-		// hold the additional bytes
-		// if disk runs out of space write as many bytes as possible
-		// so number of bytes can be less than count - can be 0
 		} else {
 			memcpy(bounce_buffer + tmp_offset, buf + buf_offset, count);
 			block_write(block_index, bounce_buffer);
@@ -543,12 +552,10 @@ int fs_write(int fd, void *buf, size_t count)
 			break;
 		}
 		mode = WRITE_MODE;
-		// get to eof?
 	}
 
 	int index = fd_open_list[fd_index].root_index;
 	rootdirectory[index].file_size += bytes_added;
-
 	fd_open_list[fd_index].offset = old_offset + bytes_written;
 
 	return bytes_written;
