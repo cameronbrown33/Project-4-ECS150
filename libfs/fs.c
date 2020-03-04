@@ -430,6 +430,7 @@ static int16_t find_block(int fd, int offset, int* mode)
 		}
 	}
 	
+	/* locate start of file's data blocks */
 	for (i = 0; i < FS_FILE_MAX_COUNT; i++) {
 		if (!strcmp(rootdirectory[i].filename, filename)) {
 			if (rootdirectory[i].data_index == FAT_EOC) {
@@ -441,7 +442,7 @@ static int16_t find_block(int fd, int offset, int* mode)
 					}
 				}
 				else {
-					return -1;
+					return EXIT_ERR;
 				}
 			}
 			index = rootdirectory[i].data_index;
@@ -449,6 +450,7 @@ static int16_t find_block(int fd, int offset, int* mode)
 		}
 	}
 
+	/* traverse the data blocks until reach offset */
 	while (offset >= BLOCK_SIZE) {
 		if (fatblock.block_table[index] == FAT_EOC) {
 			if (*mode == WRITE_MODE) {
@@ -563,14 +565,18 @@ int fs_write(int fd, void *buf, size_t count)
 
 int fs_read(int fd, void *buf, size_t count)
 {
+	int i;
+	int index = -1;	
+	uint16_t block_index;
+	int buf_offset = 0;
+	int mode = READ_MODE;
+	uint32_t offset, file_size = 0;
+
 	if (fd < 0) {
 		return EXIT_ERR;
 	}
-	// buf_offset and offset are the same	
+
 	/* get offset from fd */
-	int i;
-	int index = -1;
-	uint32_t offset, file_size = 0;
 	for (i = 0; i < open_files; i++) {
 		if (fd_open_list[i].fd == fd) {
 			index = i;
@@ -580,21 +586,17 @@ int fs_read(int fd, void *buf, size_t count)
 		}
 	}
 
+	/* file fd not currently open */
 	if (index < 0) {
 		return EXIT_ERR;
 	}
-
-	uint16_t block_index;
-	int buf_offset = 0;
-	int mode = READ_MODE;
+	
 	char *bounce_buffer = malloc(BLOCK_SIZE);
 	memset(bounce_buffer, 0, BLOCK_SIZE);
 
-	// return -1...
-
 	while (1) {
 		block_index = find_block(fd, offset, &mode);
-		if (block_index == 0xFFFF) {
+		if (block_index == FAT_EOC) {
 			break;
 		}
 		uint16_t tmp_offset = offset % BLOCK_SIZE;
@@ -606,17 +608,18 @@ int fs_read(int fd, void *buf, size_t count)
 			return EXIT_ERR;
 		}
 	
-		// then copy only the right amount of bytes from the bounce buffer into 
-		// the user supplied buffer
+		/* copy desired bytes from bounce buffer into user supplied buffer */
 		if (tmp_offset + count > BLOCK_SIZE) {
 			if (file_size < BLOCK_SIZE) {
-				memcpy(buf + buf_offset, bounce_buffer + tmp_offset, file_size - tmp_offset);
+				memcpy(buf + buf_offset, bounce_buffer + tmp_offset, 
+						file_size - tmp_offset);
 				buf_offset += file_size - tmp_offset;
 				offset += file_size - tmp_offset;
 				break;
 			}
 			else {
-				memcpy(buf + buf_offset, bounce_buffer + tmp_offset, BLOCK_SIZE - tmp_offset);
+				memcpy(buf + buf_offset, bounce_buffer + tmp_offset, 
+						BLOCK_SIZE - tmp_offset);
 				buf_offset += BLOCK_SIZE - tmp_offset;
 				count -= BLOCK_SIZE - tmp_offset;
 				file_size -= BLOCK_SIZE - tmp_offset;
@@ -624,7 +627,8 @@ int fs_read(int fd, void *buf, size_t count)
 			}
 		} else {
 			if (tmp_offset + count > file_size) {
-				memcpy(buf + buf_offset, bounce_buffer + tmp_offset, file_size - tmp_offset);
+				memcpy(buf + buf_offset, bounce_buffer + tmp_offset, 
+						file_size - tmp_offset);
 				buf_offset += file_size - tmp_offset;
 				offset += file_size - tmp_offset;
 			}
@@ -638,6 +642,7 @@ int fs_read(int fd, void *buf, size_t count)
 		// get to eof?
 	}
 
-	fd_open_list[index].offset = buf_offset;
-	return buf_offset; //strlen(buf)
+	fd_open_list[index].offset += buf_offset;
+	
+	return buf_offset;
 }
