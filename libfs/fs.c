@@ -461,17 +461,18 @@ int fs_write(int fd, void *buf, size_t count)
 		return EXIT_ERR;
 	}
 
+	if (offset > file_size) {
+		return EXIT_ERR;
+	}
+	
 	int bytes_written = 0;
 	int bytes_added = 0;
-	if (offset / BLOCK_SIZE > file_size / BLOCK_SIZE) {
-		bytes_added += file_size % BLOCK_SIZE;
-		file_size = 0;
-	}
-
 	int mode = WRITE_MODE;
 	uint16_t block_index;
 	char *bounce_buffer = malloc(BLOCK_SIZE);
 	memset(bounce_buffer, 0, BLOCK_SIZE);
+
+	file_size -= (offset / BLOCK_SIZE) * BLOCK_SIZE;
 
 	while (1) {
 		block_index = find_block(fd, offset, &mode);
@@ -495,14 +496,13 @@ int fs_write(int fd, void *buf, size_t count)
 			buf_offset += BLOCK_SIZE - offset;
 			bytes_written += BLOCK_SIZE - offset;
 			count -= BLOCK_SIZE - offset;
-			if (mode > 1) {
-				bytes_added += (mode - 2) * BLOCK_SIZE;
-			}
-			bytes_added += BLOCK_SIZE - file_size;
 			if (file_size > BLOCK_SIZE) {
 				file_size -= BLOCK_SIZE - offset;
 			}
-			file_size = 0;
+			else {
+				bytes_added += BLOCK_SIZE - file_size;
+				file_size = 0;
+			}
 			offset = 0;
 			//	printf("BLOCK_SIZE - offset: %u offset: %u \n\n", BLOCK_SIZE - offset, offset);
 			//	printf("count: %lu\n\n", count);
@@ -515,8 +515,7 @@ int fs_write(int fd, void *buf, size_t count)
 		} else {
 			memcpy(bounce_buffer + offset, buf + buf_offset, count);
 			block_write(block_index, bounce_buffer);
-			if (mode > 1) {
-				bytes_added += (mode - 2) * BLOCK_SIZE;
+			if (count + offset > file_size) {
 				bytes_added += count + offset - file_size;
 			}
 			bytes_written += count;
