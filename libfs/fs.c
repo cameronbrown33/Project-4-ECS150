@@ -421,6 +421,7 @@ static uint16_t find_block(int fd, int offset, int* mode)
 	}
 
 	while (offset >= BLOCK_SIZE) {
+//		printf("here\n");
 		if (fatblock.block_table[index] == FAT_EOC) {
 			if (*mode == WRITE_MODE) {
 				new_block(i);
@@ -430,7 +431,9 @@ static uint16_t find_block(int fd, int offset, int* mode)
 				return -1;
 			}
 		}
+//		printf("offset: %u\n", offset);
 		index = fatblock.block_table[index];
+//		printf("index: %u\n", index);
 		offset -= BLOCK_SIZE;
 	}
 	
@@ -484,7 +487,7 @@ int fs_write(int fd, void *buf, size_t count)
 //		printf("offset in while: %u\n", offset);
 //		printf("block_index: %u\n", block_index);
 		// read entire block from disk into bounce buffer
-		offset = offset % BLOCK_SIZE;
+		uint16_t tmp_offset = offset % BLOCK_SIZE;
 //		printf("offset: %u\n", offset);
 		if (block_read(block_index, bounce_buffer) == EXIT_ERR) {
 			return EXIT_ERR;
@@ -494,13 +497,13 @@ int fs_write(int fd, void *buf, size_t count)
 		// into file referenced by fd
 		// then modify only the part starting from offset with buf
 		// write whole buffer back to block
-		if (offset + count > BLOCK_SIZE) {
+		if (tmp_offset + count > BLOCK_SIZE) {
 		//	printf("count: %lu\n", count);
-			memcpy(bounce_buffer + offset, buf + buf_offset, BLOCK_SIZE - offset);
+			memcpy(bounce_buffer + tmp_offset, buf + buf_offset, BLOCK_SIZE - tmp_offset);
 			block_write(block_index, bounce_buffer);
-			buf_offset += BLOCK_SIZE - offset;
-			bytes_written += BLOCK_SIZE - offset;
-			count -= BLOCK_SIZE - offset;
+			buf_offset += BLOCK_SIZE - tmp_offset;
+			bytes_written += BLOCK_SIZE - tmp_offset;
+			count -= BLOCK_SIZE - tmp_offset;
 			if (file_size > BLOCK_SIZE) {
 				file_size -= BLOCK_SIZE;
 			}
@@ -508,7 +511,7 @@ int fs_write(int fd, void *buf, size_t count)
 				bytes_added += BLOCK_SIZE - file_size;
 				file_size = 0;
 			}
-			offset = 0;
+			offset += BLOCK_SIZE - tmp_offset;
 			//	printf("BLOCK_SIZE - offset: %u offset: %u \n\n", BLOCK_SIZE - offset, offset);
 			//	printf("count: %lu\n\n", count);
 		// call helper function
@@ -518,12 +521,13 @@ int fs_write(int fd, void *buf, size_t count)
 		// if disk runs out of space write as many bytes as possible
 		// so number of bytes can be less than count - can be 0
 		} else {
-			memcpy(bounce_buffer + offset, buf + buf_offset, count);
+			memcpy(bounce_buffer + tmp_offset, buf + buf_offset, count);
 			block_write(block_index, bounce_buffer);
-			if (count + offset > file_size) {
-				bytes_added += count + offset - file_size;
+			if (count + tmp_offset > file_size) {
+				bytes_added += count + tmp_offset - file_size;
 			}
 			bytes_written += count;
+			offset += count;
 			break;
 		}
 		mode = WRITE_MODE;
@@ -536,7 +540,7 @@ int fs_write(int fd, void *buf, size_t count)
 	rootdirectory[index].file_size += bytes_added;
 
 	// printf("+ root directory size %d\n", rootdirectory[index].file_size);
-
+//	printf("final offset: %u\n", offset);
 	fd_open_list[fd_index].offset = old_offset + bytes_written;
 
 	return bytes_written;
