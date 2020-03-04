@@ -497,7 +497,7 @@ int fs_write(int fd, void *buf, size_t count)
 			bytes_written += BLOCK_SIZE - offset;
 			count -= BLOCK_SIZE - offset;
 			if (file_size > BLOCK_SIZE) {
-				file_size -= BLOCK_SIZE - offset;
+				file_size -= BLOCK_SIZE;
 			}
 			else {
 				bytes_added += BLOCK_SIZE - file_size;
