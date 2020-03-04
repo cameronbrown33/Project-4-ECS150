@@ -19,9 +19,11 @@ int main(void) {
 
 	fs_write(fd, out_buf, 11);
 
+	printf("+ status %d\n",fs_stat(fd));
+	
 	fs_lseek(fd, 0);
 	
-	fs_read(fd, in_buf, 11);
+	printf("+ read %d bytes\n", fs_read(fd, in_buf, 11));
 
 	printf("+ %s\n", in_buf);
 

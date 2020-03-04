@@ -328,8 +328,10 @@ int fs_stat(int fd)
 	}
 
 	// printf("+ %s\n", filename);
+	
+	// printf("+ fd index status %d\n", index);
 
-	return fd_open_list[index].file_size;
+	return rootdirectory[fd_open_list[index].root_index].file_size;
 }
 
 int fs_lseek(int fd, size_t offset)
@@ -454,6 +456,7 @@ int fs_write(int fd, void *buf, size_t count)
 			offset = fd_open_list[fd_index].offset;
 			file_size = fd_open_list[fd_index].file_size;
 			old_offset = offset;
+			// printf("file found is \"%s\"\n", fd_open_list[fd_index].filename);
 			// printf("offset: %u\n", offset);
 			break;
 		}
@@ -527,7 +530,12 @@ int fs_write(int fd, void *buf, size_t count)
 		// get to eof?
 	}
 
-	rootdirectory[fd_open_list[fd_index].root_index].file_size += bytes_added;
+	// printf("+ bytes added %d\n", bytes_added);
+	// printf("+ fd index found %d\n", fd_index);
+	int index = fd_open_list[fd_index].root_index;
+	rootdirectory[index].file_size += bytes_added;
+
+	// printf("+ root directory size %d\n", rootdirectory[index].file_size);
 
 	fd_open_list[fd_index].offset = old_offset + bytes_written;
 
@@ -548,7 +556,7 @@ int fs_read(int fd, void *buf, size_t count)
 		if (fd_open_list[i].fd == fd) {
 			index = i;
 			offset = fd_open_list[index].offset;
-			file_size = fd_open_list[index].file_size;
+			file_size = rootdirectory[fd_open_list[index].root_index].file_size;
 			break;
 		}
 	}
